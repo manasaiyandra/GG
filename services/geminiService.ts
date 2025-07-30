@@ -4,7 +4,30 @@ import { GrammarSpotterQuestion, GrammarFillQuestion, Dialogue, EmojiQuestion, G
 import { TOTAL_QUESTIONS_PER_GAME } from "../constants";
 
 export const isApiKeyConfigured = (): boolean => {
-    return !!process.env.API_KEY;
+    const apiKey = process.env.API_KEY;
+    console.log('API Key configured:', !!apiKey);
+    return !!apiKey;
+};
+
+export const testApiConnection = async (): Promise<boolean> => {
+    if (!isApiKeyConfigured()) {
+        return false;
+    }
+
+    try {
+        const testPrompt = "Generate a simple test response: 'Hello World'";
+        const response = await ai!.models.generateContent({
+            model,
+            contents: testPrompt,
+            config: {
+                temperature: 0.1,
+            },
+        });
+        return !!response.text;
+    } catch (error) {
+        console.error("API connection test failed:", error);
+        return false;
+    }
 };
 
 const ai: GoogleGenAI | null = isApiKeyConfigured()
@@ -89,10 +112,11 @@ const grammarValidationSchema = {
 const generateWithSchema = async <T,>(prompt: string, schema: any): Promise<T> => {
     if (!ai) {
         console.error("Gemini API key not configured. Cannot make API calls.");
-        throw new Error("Gemini API key is not configured.");
+        throw new Error("Gemini API key is not configured. Please set the API_KEY environment variable.");
     }
 
     try {
+        console.log("Making API call to Gemini...");
         const response = await ai.models.generateContent({
             model,
             contents: prompt,
@@ -102,10 +126,25 @@ const generateWithSchema = async <T,>(prompt: string, schema: any): Promise<T> =
                 temperature: 0.9,
             },
         });
+        
+        if (!response.text) {
+            throw new Error("No response text received from Gemini API");
+        }
+        
         const jsonText = response.text.trim();
-        return JSON.parse(jsonText) as T;
+        console.log("Received response from Gemini API");
+        
+        try {
+            return JSON.parse(jsonText) as T;
+        } catch (parseError) {
+            console.error("Failed to parse JSON response:", jsonText);
+            throw new Error("Invalid JSON response from Gemini API");
+        }
     } catch (error) {
         console.error("Gemini API call failed:", error);
+        if (error instanceof Error) {
+            throw new Error(`API Error: ${error.message}`);
+        }
         throw new Error("Failed to generate content from Gemini API.");
     }
 };

@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { testApiConnection } from '../services/geminiService';
 
 const WarningIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -7,6 +8,27 @@ const WarningIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
 );
 
 export const ApiKeyWarning: React.FC = () => {
+    const [isTesting, setIsTesting] = useState(false);
+    const [testResult, setTestResult] = useState<string | null>(null);
+
+    const handleTestConnection = async () => {
+        setIsTesting(true);
+        setTestResult(null);
+        
+        try {
+            const isConnected = await testApiConnection();
+            if (isConnected) {
+                setTestResult('✅ API connection successful! You can now use the app.');
+            } else {
+                setTestResult('❌ API connection failed. Please check your API key and try again.');
+            }
+        } catch (error) {
+            setTestResult(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        } finally {
+            setIsTesting(false);
+        }
+    };
+
     return (
         <div className="min-h-screen flex items-center justify-center p-4 bg-slate-900">
             <div className="max-w-2xl w-full bg-slate-800 rounded-lg border border-yellow-500/50 shadow-2xl shadow-yellow-500/10">
@@ -29,7 +51,26 @@ export const ApiKeyWarning: React.FC = () => {
                                 API_KEY=your_api_key_here
                             </code>
                         </pre>
+                        <p className="text-sm text-slate-400 mt-2">
+                           Alternatively, you can also use <code className="font-mono bg-slate-700 text-cyan-300 px-1 py-0.5 rounded">GEMINI_API_KEY</code> as the environment variable name.
+                        </p>
                          <p className="text-xs text-slate-500 mt-3">After adding the key, you may need to restart your development server for the change to take effect.</p>
+                    </div>
+                    
+                    <div className="mt-6 p-4 bg-slate-900/50 rounded-md border border-slate-700">
+                        <p className="font-semibold text-slate-300 mb-3">Test API Connection:</p>
+                        <button
+                            onClick={handleTestConnection}
+                            disabled={isTesting}
+                            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-600 text-white rounded-md font-medium transition-colors"
+                        >
+                            {isTesting ? 'Testing...' : 'Test Connection'}
+                        </button>
+                        {testResult && (
+                            <p className={`mt-3 text-sm ${testResult.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>
+                                {testResult}
+                            </p>
+                        )}
                     </div>
                 </div>
             </div>
