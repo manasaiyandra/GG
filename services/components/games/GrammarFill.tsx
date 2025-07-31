@@ -1,36 +1,47 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { GameComponentProps, GrammarFillQuestion, Feedback } from '../../types';
-import { generatePrepositionQuestions } from '../../services/geminiService';
+import { generateGrammarFillQuestions } from '../../services/geminiService';
 import { TOTAL_QUESTIONS_PER_GAME } from '../../constants';
 import { GameContainer } from '../shared/GameContainer';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { ScoreSummary } from '../shared/ScoreSummary';
 import { Button } from '../shared/Button';
 
-export const PrepositionDrop: React.FC<GameComponentProps> = ({ onBack, onGameComplete }) => {
+// Fisher-Yates shuffle
+const shuffleArray = <T,>(array: T[]): T[] => {
+    let currentIndex = array.length, randomIndex;
+    const newArray = [...array];
+    while (currentIndex !== 0) {
+        randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex--;
+        [newArray[currentIndex], newArray[randomIndex]] = [
+            newArray[randomIndex], newArray[currentIndex]];
+    }
+    return newArray;
+};
+
+export const GrammarFill: React.FC<GameComponentProps> = ({ onBack, onGameComplete }) => {
     const [questions, setQuestions] = useState<GrammarFillQuestion[]>([]);
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [score, setScore] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [feedback, setFeedback] = useState<Feedback>('none');
-    const [answered, setAnswered] = useState(false);
-    const [isDragging, setIsDragging] = useState(false);
-    const [filledAnswer, setFilledAnswer] = useState<string | null>(null);
+    const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+    const [shuffledOptions, setShuffledOptions] = useState<string[]>([]);
 
     const fetchQuestions = useCallback(async () => {
         setIsLoading(true);
         setError(null);
         try {
-            const fetchedQuestions = await generatePrepositionQuestions();
+            const fetchedQuestions = await generateGrammarFillQuestions();
             if (fetchedQuestions.length < TOTAL_QUESTIONS_PER_GAME) {
                  throw new Error("Not enough unique questions generated.");
             }
             setQuestions(fetchedQuestions);
             setCurrentQuestionIndex(0);
             setScore(0);
-            setAnswered(false);
-            setFilledAnswer(null);
+            setSelectedAnswer(null);
         } catch (err) {
             setError('Failed to load questions. Please try again later.');
             console.error(err);
@@ -51,34 +62,42 @@ export const PrepositionDrop: React.FC<GameComponentProps> = ({ onBack, onGameCo
         }
     }, [isGameOver, score, onGameComplete]);
 
-    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        if (answered) return;
+    useEffect(() => {
+        if (questions.length > 0 && currentQuestionIndex < questions.length) {
+            setShuffledOptions(shuffleArray(questions[currentQuestionIndex].options));
+        }
+    }, [questions, currentQuestionIndex]);
+
+    const handleAnswerClick = (option: string) => {
+        if (selectedAnswer) return;
         
-        const droppedOption = e.dataTransfer.getData("text/plain");
-        setIsDragging(false);
-
+        setSelectedAnswer(option);
         const currentQuestion = questions[currentQuestionIndex];
-        setAnswered(true);
 
-        if (droppedOption === currentQuestion.answer) {
+        if (option === currentQuestion.answer) {
             setScore(s => s + 1);
             setFeedback('correct');
         } else {
             setFeedback('incorrect');
         }
-        setFilledAnswer(currentQuestion.answer);
-        
+
         setTimeout(() => {
             setFeedback('none');
-            setAnswered(false);
-            setFilledAnswer(null);
+            setSelectedAnswer(null);
             if (currentQuestionIndex < TOTAL_QUESTIONS_PER_GAME) {
                 setCurrentQuestionIndex(i => i + 1);
             }
         }, 2500);
     };
     
+    const getButtonClass = (option: string) => {
+        if (!selectedAnswer) return 'bg-slate-700 hover:bg-slate-600';
+        const currentQuestion = questions[currentQuestionIndex];
+        if (option === currentQuestion.answer) return 'bg-green-600 animate-pulse-correct';
+        if (option === selectedAnswer && option !== currentQuestion.answer) return 'bg-red-600 animate-shake';
+        return 'bg-slate-700 opacity-50';
+    };
+
     if (isLoading) return <div className="flex justify-center items-center h-96"><LoadingSpinner /></div>;
     if (error) return <div className="text-center text-red-400"><p>{error}</p><Button onClick={fetchQuestions} className="mt-4">Retry</Button></div>;
     if (isGameOver || questions.length === 0) {
@@ -88,48 +107,40 @@ export const PrepositionDrop: React.FC<GameComponentProps> = ({ onBack, onGameCo
     const currentQuestion = questions[currentQuestionIndex];
     const sentenceParts = currentQuestion.sentence.split('__BLANK__');
 
-    let dropzoneClass = 'bg-slate-700 border-slate-500';
-    if(isDragging) dropzoneClass = 'bg-cyan-900/50 border-cyan-500 scale-105';
-    if(feedback === 'correct') dropzoneClass = 'bg-green-600 border-green-400 animate-pulse-correct';
-    if(feedback === 'incorrect') dropzoneClass = 'bg-red-600 border-red-400 animate-shake';
-
     return (
         <GameContainer 
-            title="Preposition Drop"
-            description="Drag the correct preposition into the blank space."
+            title="Grammar Fill"
+            description="Choose the best word to complete the sentence."
             score={score}
             questionNumber={currentQuestionIndex}
             totalQuestions={TOTAL_QUESTIONS_PER_GAME}
             onBack={onBack}
         >
             <div className="text-center">
-                <div className="text-2xl sm:text-3xl font-serif bg-slate-900 p-6 rounded-lg mb-8 flex items-center justify-center flex-wrap gap-2">
+                <p className="text-2xl sm:text-3xl font-serif bg-slate-900 p-6 rounded-lg mb-8 leading-relaxed flex items-center justify-center flex-wrap">
                     <span>{sentenceParts[0]}</span>
-                    <div 
-                        onDrop={handleDrop} 
-                        onDragOver={(e) => e.preventDefault()}
-                        onDragEnter={() => setIsDragging(true)}
-                        onDragLeave={() => setIsDragging(false)}
-                        className={`inline-flex items-center justify-center w-28 h-12 border-2 border-dashed rounded-lg transition-all duration-300 ${dropzoneClass}`}
-                    >
-                        {filledAnswer && <span className="text-xl font-bold text-white">{filledAnswer}</span>}
-                    </div>
+                    <span className="inline-flex items-center justify-center w-32 h-10 bg-slate-700 border-b-2 border-slate-500 mx-2 text-xl font-bold rounded-md">
+                      {selectedAnswer && (
+                        <span className="text-green-300 animate-pulse-correct">
+                            {currentQuestion.answer}
+                        </span>
+                      )}
+                    </span>
                     <span>{sentenceParts[1]}</span>
-                </div>
-                
-                <div className="flex justify-center gap-4 flex-wrap">
-                    {currentQuestion.options.map((option) => (
-                        <div
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {shuffledOptions.map((option) => (
+                        <button
                             key={option}
-                            draggable={!answered}
-                            onDragStart={(e) => e.dataTransfer.setData("text/plain", option)}
-                            className={`px-6 py-3 rounded-lg text-lg font-semibold transition-all duration-300 ${answered ? 'bg-slate-600 opacity-50 cursor-not-allowed' : 'bg-slate-700 cursor-grab hover:bg-slate-600'}`}
+                            onClick={() => handleAnswerClick(option)}
+                            disabled={!!selectedAnswer}
+                            className={`w-full p-4 rounded-lg text-lg font-semibold transition-all duration-300 disabled:cursor-not-allowed ${getButtonClass(option)}`}
                         >
                             {option}
-                        </div>
+                        </button>
                     ))}
                 </div>
-                {answered && (
+                 {selectedAnswer && (
                     <div className={`mt-6 p-4 rounded-lg text-lg ${feedback === 'correct' ? 'bg-green-800 text-green-100' : 'bg-red-800 text-red-100'}`}>
                         {feedback === 'correct' ? 'Correct! ' : `The correct answer is "${currentQuestion.answer}". `}
                         <span className="text-sm opacity-80">{currentQuestion.explanation}</span>
